@@ -184,9 +184,9 @@ export class OpenAIOcrService {
       onProgress?.(25, 'OpenAI APIに接続中...');
       onProgress?.(35, 'リクエストを送信中...');
       
-      // ユーザー指定のモデルを使用
+      // 設定されたモデルを使用
       const requestBody = {
-        model: 'gpt-4.1', // gpt-4.1モデルを使用
+        model: 'gpt-5-mini-2025-08-07', // 設定されたOCRモデルを使用
         messages: [
           {
             role: 'user',

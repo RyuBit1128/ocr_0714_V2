@@ -80,15 +80,42 @@ const ProcessingPage: React.FC = () => {
             return;
           }
 
-        // OpenAI Vision APIでOCR処理
+        // OpenAI Vision APIでOCR処理（複数枚は並列処理）
         setStatusMessage('画像を分析中...');
         setProgress(10);
-        const ocrResult = await OpenAIOcrService.processImage(capturedImage, onProgress);
+
+        let ocrResults: any[] = [];
+
+        if (Array.isArray(capturedImage)) {
+          // 複数画像の場合は並列処理
+          log.info(`${capturedImage.length}枚の画像を並列処理開始`);
+          const progressPerImage = 75 / capturedImage.length;
+
+          const results = await Promise.all(
+            capturedImage.map((image, index) =>
+              OpenAIOcrService.processImage(image, (progress, message) => {
+                const overallProgress = 10 + (index * progressPerImage) + (progress / 100 * progressPerImage);
+                onProgress(overallProgress, `${index + 1}/${capturedImage.length}: ${message}`);
+              })
+            )
+          );
+          ocrResults = results;
+          log.info('すべての画像の並列処理が完了');
+        } else {
+          // 単一画像の場合は従来通り
+          const result = await OpenAIOcrService.processImage(capturedImage, onProgress);
+          ocrResults = [result];
+        }
 
         // データ補正処理
         setStatusMessage('データを補正中...');
         setProgress(95);
-        const correctedResult = await DataCorrectionService.correctOcrResult(ocrResult);
+        const correctedResults = await Promise.all(
+          ocrResults.map(result => DataCorrectionService.correctOcrResult(result))
+        );
+
+        // 複数の結果をマージするか、最初の結果を使用
+        const correctedResult = correctedResults[0];
         
         // デフォルトの作業日を今日の日付に設定
                   if (!correctedResult.ヘッダー.作業日 || correctedResult.ヘッダー.作業日 === 'undefined') {

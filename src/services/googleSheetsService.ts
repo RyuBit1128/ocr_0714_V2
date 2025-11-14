@@ -122,15 +122,14 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Google OAuth認証を開始（リダイレクト方式）
+   * Google OAuth認証を開始（すべてのデバイスで新ウィンドウ方式に統一）
    */
   static async authenticate(): Promise<string> {
     try {
       const config = this.getConfig();
       const redirectUri = window.location.origin + '/ocr_0714_V2/';
       const deviceType = this.getDeviceType();
-      const userAgent = this.getDeviceUserAgent();
-      
+
       // OAuth認証URL を構築
       const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
       authUrl.searchParams.set('client_id', config.googleClientId);
@@ -138,19 +137,38 @@ export class GoogleSheetsService {
       authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/spreadsheets');
       authUrl.searchParams.set('response_type', 'token');
       authUrl.searchParams.set('include_granted_scopes', 'true');
-      authUrl.searchParams.set('state', 'auth_redirect');
-      
-      // OAuth標準パラメータのみ使用（カスタムパラメータは許可されない）
+      authUrl.searchParams.set('state', 'auth_redirect_window');
+      authUrl.searchParams.set('prompt', 'consent'); // 毎回同意画面を表示（キャッシュを避ける）
 
-      console.log('🔄 リダイレクト認証を開始:', authUrl.toString());
-      console.log('📱 デバイス情報:', { deviceType, userAgent });
-      
-      // リダイレクトで認証開始（この時点でページが移動するため、この関数は戻らない）
-      window.location.href = authUrl.toString();
-      
-      // リダイレクトされるため、この行には到達しない
-      throw new Error('認証リダイレクトが開始されました');
-      
+      console.log('🔄 認証ウィンドウを開始:', deviceType);
+
+      // 新しいウィンドウで認証を開始
+      const authWindow = window.open(authUrl.toString(), 'auth_window', 'width=500,height=600');
+
+      if (!authWindow) {
+        throw new Error('ポップアップがブロックされました。ブラウザ設定を確認してください。');
+      }
+
+      // 認証ウィンドウから通知を受け取るまで待機
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('認証タイムアウト（30秒以上応答がありません）'));
+        }, 30000);
+
+        const handleMessage = (event: MessageEvent) => {
+          if (event.origin !== window.location.origin) return;
+
+          if (event.data.type === 'auth_success' && event.data.token) {
+            clearTimeout(timeout);
+            window.removeEventListener('message', handleMessage);
+            console.log('✅ 認証成功');
+            resolve(event.data.token);
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+      });
+
     } catch (error) {
       throw new Error(`認証エラー: ${error}`);
     }
@@ -225,29 +243,33 @@ export class GoogleSheetsService {
       const expiresIn = params.get('expires_in');
       const state = params.get('state');
 
-      if (accessToken && (state === 'auth_redirect' || state === 'auth_redirect_pwa')) {
+      if (accessToken && (state === 'auth_redirect' || state === 'auth_redirect_pwa' || state === 'auth_redirect_window')) {
         this.accessToken = accessToken;
         const expiresInSeconds = expiresIn ? parseInt(expiresIn, 10) : 3600;
         this.saveTokenToStorage(accessToken, expiresInSeconds);
 
         // URL からハッシュを削除
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        
+
         log.success('認証成功！トークンを取得しました');
-        
+
         // 認証成功後にトークン監視を開始/リセット
         TokenExpiryService.resetMonitoring();
-        
-        // PWA認証の場合、親ウィンドウに成功を通知
-        if (state === 'auth_redirect_pwa' && window.opener) {
+
+        // 親ウィンドウが存在する場合（新ウィンドウからの通知）
+        if (window.opener) {
           try {
-            window.opener.postMessage({ type: 'auth_success' }, window.location.origin);
+            window.opener.postMessage({
+              type: 'auth_success',
+              token: accessToken,
+              expiresIn: expiresInSeconds
+            }, window.location.origin);
             window.close();
           } catch (error) {
             console.warn('親ウィンドウへの通知に失敗:', error);
           }
         }
-        
+
         return true;
       }
 

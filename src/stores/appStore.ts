@@ -2,9 +2,9 @@ import { create } from 'zustand';
 import { OcrResult, WorkRecord, AppError } from '@/types';
 
 interface AppState {
-  // 撮影状態
-  capturedImage: string | null;
-  setCapturedImage: (image: string | null) => void;
+  // 撮影状態（複数枚対応）
+  capturedImage: string | string[] | null;
+  setCapturedImage: (image: string | string[] | null) => void;
   
   // OCR結果
   ocrResult: OcrResult | null;

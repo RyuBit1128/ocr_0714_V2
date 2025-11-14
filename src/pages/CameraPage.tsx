@@ -21,10 +21,18 @@ const CameraPage: React.FC = () => {
   
   const { setCapturedImage, setCurrentStep } = useAppStore();
 
-  // ファイルアップロード
+  // ファイルアップロード（複数枚対応）
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const imageDataArray: string[] = [];
+    let processedCount = 0;
+
+    // 各ファイルを処理
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
       // 画像ファイルかチェック
       if (!file.type.startsWith('image/')) {
         setCameraError('画像ファイルを選択してください（JPG、PNG、GIF）');
@@ -41,19 +49,25 @@ const CameraPage: React.FC = () => {
       reader.onload = (e) => {
         const result = e.target?.result as string;
         if (result) {
-          processImage(result);
+          imageDataArray.push(result);
+        }
+        processedCount++;
+
+        // すべてのファイルが読み込まれたら処理開始
+        if (processedCount === files.length) {
+          processImages(imageDataArray);
         }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // 画像処理（撮影・アップロード共通）
-  const processImage = (imageSrc: string) => {
+  // 画像処理（複数枚対応）
+  const processImages = (imageDataArray: string[]) => {
     setIsCapturing(true);
-    setCapturedImage(imageSrc);
+    setCapturedImage(imageDataArray);
     setCurrentStep(2);
-    
+
     // 少し遅延を入れてから次のページに遷移
     setTimeout(() => {
       navigate('/processing');
@@ -88,12 +102,13 @@ const CameraPage: React.FC = () => {
         </Alert>
       )}
 
-      {/* 隠しファイル入力 */}
+      {/* 隠しファイル入力（複数枚選択対応） */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         onChange={handleFileUpload}
+        multiple
         style={{ display: 'none' }}
       />
 

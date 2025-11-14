@@ -124,7 +124,7 @@ export const OCR_PROMPT = `
 他の項目はこれまで通り、読み取った内容をできるだけ正確に記載してください。
 `;
 
-export const OCR_MODEL = 'gpt-4.1'; 
+export const OCR_MODEL = 'gpt-5-mini-2025-08-07'; 
 
 export const OCR_CONFIG = {
   model: OCR_MODEL,

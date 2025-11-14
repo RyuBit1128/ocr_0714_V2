@@ -34,27 +34,6 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     }
   };
 
-  // PWA環境かどうかを判定
-  const isPWA = () => {
-    return window.matchMedia('(display-mode: standalone)').matches ||
-           (window.navigator as any).standalone ||
-           document.referrer.includes('android-app://');
-  };
-
-
-  // デバイス別の認証方法を選択
-  const shouldUseRedirectAuth = () => {
-    const deviceType = getDeviceType();
-    
-    // iPhone のみリダイレクト方式を強制
-    if (deviceType === 'iphone') {
-      return true;
-    }
-    
-    // iPad と Android は常に新しいタブでの認証を使用（警告画面スキップ）
-    return false;
-  };
-
   const checkAuthentication = async () => {
     try {
       const token = localStorage.getItem('google_access_token');
@@ -92,52 +71,16 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     try {
       setIsAuthenticating(true);
       setAuthError(null);
-      
+
       const deviceType = getDeviceType();
-      log.debug('デバイス検出結果', { deviceType, isPWA: isPWA() });
-      
-      if (shouldUseRedirectAuth()) {
-        // リダイレクト方式（iPhone または通常ブラウザ）
-        log.debug('リダイレクト方式で認証開始', { deviceType });
+      log.debug('認証開始', { deviceType });
+
+      // すべてのデバイスで統一した新ウィンドウ方式を使用
+      try {
         await GoogleSheetsService.authenticate();
-      } else {
-        // PWAモードの場合は新しいウィンドウで認証を開始（iPad/Android）
-        log.debug('PWAモードで認証開始', { deviceType });
-        const config = (GoogleSheetsService as any).getConfig();
-        const redirectUri = window.location.origin + '/ocr_0714_V2/';
-        
-        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-        authUrl.searchParams.set('client_id', config.googleClientId);
-        authUrl.searchParams.set('redirect_uri', redirectUri);
-        authUrl.searchParams.set('scope', 'https://www.googleapis.com/auth/spreadsheets');
-        authUrl.searchParams.set('response_type', 'token');
-        authUrl.searchParams.set('include_granted_scopes', 'true');
-        authUrl.searchParams.set('state', 'auth_redirect_pwa');
-        
-        // OAuth標準パラメータのみ使用（カスタムパラメータは許可されない）
-
-        // PWAでは新しいタブで開く
-        const authWindow = window.open(authUrl.toString(), '_blank');
-        
-        if (!authWindow) {
-          throw new Error('ポップアップがブロックされました。ブラウザの設定を確認してください。');
-        }
-
-        // ポップアップの完了を監視
-        const checkAuth = setInterval(() => {
-          try {
-            if (authWindow.closed) {
-              clearInterval(checkAuth);
-              setIsAuthenticating(false);
-              // 認証状態を再チェック
-              setTimeout(() => {
-                checkAuthentication();
-              }, 1000);
-            }
-          } catch (error) {
-            // Cross-origin エラーは無視
-          }
-        }, 1000);
+      } catch (error) {
+        // 認証エラーの場合、ユーザーに通知
+        throw error;
       }
     } catch (error) {
       log.error('ログインエラー', error);
@@ -154,16 +97,17 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   useEffect(() => {
     checkAuthentication();
 
-    // PWA認証完了の監視
+    // 認証ウィンドウからのメッセージ監視
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      
+
       if (event.data.type === 'auth_success') {
-        log.success('PWA認証が完了しました');
+        log.success('認証が完了しました');
         setIsAuthenticating(false);
+        // トークンが localStorage に保存されたので、認証状態を再確認
         setTimeout(() => {
           checkAuthentication();
-        }, 1000);
+        }, 500);
       }
     };
 
@@ -196,9 +140,6 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
 
   // 未認証の場合はログイン画面を表示
   if (!isAuthenticated) {
-    const deviceType = getDeviceType();
-    const isPWAEnv = isPWA();
-    
     return (
       <Box sx={{ textAlign: 'center', mt: 4 }}>
         <Card sx={{ maxWidth: 400, mx: 'auto' }}>
@@ -218,17 +159,10 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
               Googleアカウントでログインしてください
             </Typography>
 
-            {isPWAEnv && deviceType !== 'iphone' && (
-              <Alert severity="info" sx={{ mb: 3, textAlign: 'left' }}>
-                PWAモードで動作中です。認証画面が新しいタブで開きます。
-              </Alert>
-            )}
-
-            {deviceType === 'iphone' && (
-              <Alert severity="info" sx={{ mb: 3, textAlign: 'left' }}>
-                iPhoneではリダイレクト方式で認証を行います。
-              </Alert>
-            )}
+            <Alert severity="info" sx={{ mb: 3, textAlign: 'left' }}>
+              認証画面が新しいウィンドウで開きます。<br />
+              ポップアップブロック設定を確認してください。
+            </Alert>
 
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
               <Button
